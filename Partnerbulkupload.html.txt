@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Enhanced Multi-Platform CSV Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.11.0/jszip.min.js"></script>
+<style>
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 5px; text-align: left; }
+    .error { background-color: #f8d7da; }
+</style>
+</head>
+<body>
+<h1>Enhanced Multi-Platform CSV Generator</h1>
+<p>Download master template, fill products, then upload below.</p>
+<a href="master_products_template.xlsx" download>Download Master Template</a>
+<br><br>
+<input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+<br><br>
+<button onclick="processFile()">Generate CSVs</button>
+<h2>Preview & Errors</h2>
+<div id="preview"></div>
+<div id="links"></div>
+
+<script>
+function cleanField(str) {
+    if(!str) return '';
+    return str.toString().trim().replace(/[\r\n]+/g, ' ').replace(/[^\x00-\x7F\u0600-\u06FF ]+/g, '');
+}
+
+function validateRow(row, seenSKUs) {
+    let errors = [];
+    if(!row.SKU) errors.push("Missing SKU");
+    if(seenSKUs.has(row.SKU)) errors.push("Duplicate SKU");
+    if(!row.Name) errors.push("Missing Name");
+    if(!row.Price || isNaN(row.Price)) errors.push("Invalid Price");
+    if(!row.Category) errors.push("Missing Category");
+    if(row['Image URL'] && !/^https?:\/\/\S+\.\S+/.test(row['Image URL'])) errors.push("Invalid Image URL");
+    return errors;
+}
+
+function processFile() {
+    const fileInput = document.getElementById('fileInput');
+    if(!fileInput.files[0]) { alert("Please select a file!"); return; }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type:'array'});
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        let rows = XLSX.utils.sheet_to_json(sheet);
+
+        // Clean fields
+        rows = rows.map(r => {
+            for(let key in r) { r[key] = cleanField(r[key]); }
+            return r;
+        });
+
+        // Expand variants/modifiers into separate rows if needed
+        let expanded = [];
+        rows.forEach(r => {
+            let variants = r.Variant ? r.Variant.split(',') : [''];
+            let modifiers = r.Modifier ? r.Modifier.split(',') : [''];
+            variants.forEach(v => {
+                modifiers.forEach(m => {
+                    let newRow = {...r};
+                    newRow.Variant = v.trim();
+                    newRow.Modifier = m.trim();
+                    expanded.push(newRow);
+                });
+            });
+        });
+
+        // Validate rows
+        let seenSKUs = new Set();
+        expanded.forEach(r => {
+            r._errors = validateRow(r, seenSKUs);
+            if(!r._errors.includes("Duplicate SKU")) seenSKUs.add(r.SKU);
+        });
+
+        showPreview(expanded);
+        generateCSVs(expanded);
+    };
+    reader.readAsArrayBuffer(fileInput.files[0]);
+}
+
+function showPreview(rows) {
+    const previewDiv = document.getElementById('preview');
+    let html = '<table><tr>';
+    for(let key in rows[0]) {
+        if(key !== '_errors') html += '<th>' + key + '</th>';
+    }
+    html += '<th>Errors</th></tr>';
+
+    rows.forEach(r => {
+        html += '<tr>';
+        for(let key in r) {
+            if(key === '_errors') continue;
+            html += r._errors.length ? `<td class="error">${r[key]}</td>` : `<td>${r[key]}</td>`;
+        }
+        html += '<td>' + r._errors.join(', ') + '</td>';
+        html += '</tr>';
+    });
+    html += '</table>';
+    previewDiv.innerHTML = html;
+}
+
+function generateCSVs(rows) {
+    const platforms = ['Talabat','Snoonu','Rafeeq','Bleems'];
+    const zip = new JSZip();
+
+    platforms.forEach(platform => {
+        let transformed = rows.map(r => {
+            let obj = {};
+            if(platform === 'Talabat') {
+                obj = { "Item Name": r.Name, "SKU": r.SKU, "Description": r.Description, "Category": r.Category, "Price": r.Price, "Stock": r.Stock, "Image URL": r['Image URL'] };
+            } else if(platform === 'Snoonu') {
+                obj = { "Product Name": r.Name, "SKU": r.SKU, "Price": r.Price, "Category": r.Category, "Stock": r.Stock, "Image URL": r['Image URL'] };
+            } else if(platform === 'Rafeeq') {
+                obj = { "Name": r.Name, "SKU": r.SKU, "Description": r.Description, "Price": r.Price, "Category": r.Category, "Stock": r.Stock };
+            } else if(platform === 'Bleems') {
+                obj = { "Product Name": r.Name, "SKU": r.SKU, "Price": r.Price, "Description": r.Description, "Image URL": r['Image URL'] };
+            }
+            return obj;
+        });
+
+        const csv = Papa.unparse(transformed);
+        zip.file(platform + "_products.csv", csv);
+    });
+
+    zip.generateAsync({type:"blob"}).then(function(content) {
+        const linksDiv = document.getElementById('links');
+        linksDiv.innerHTML = '';
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = "All_Platform_CSVs.zip";
+        link.textContent = "Download All CSVs (ZIP)";
+        linksDiv.appendChild(link);
+    });
+}
+</script>
+</body>
+</html>
