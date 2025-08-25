@@ -35,15 +35,6 @@
 
 <script>
 // --- Utility Functions ---
-function normalizeHeaders(row) {
-    let newRow = {};
-    for (let key in row) {
-        let newKey = key.toString().trim().replace(/\s+/g, ' ');
-        newRow[newKey] = row[key];
-    }
-    return newRow;
-}
-
 function cleanField(str) {
     if(!str) return '';
     return str.toString().trim().replace(/[\r\n]+/g, ' ').replace(/[^\x00-\x7F\u0600-\u06FF ]+/g, '');
@@ -60,15 +51,44 @@ function validateRow(row, seenSKUs) {
     return errors;
 }
 
-// --- Dynamic Platform Mapping ---
-const platformMap = {
-    Talabat: ["Name:Item Name","SKU:SKU","Description:Description","Category:Category","Price:Price","Stock:Stock","Image URL:Image URL"],
-    Snoonu: ["Name:Product Name","SKU:SKU","Price:Price","Category:Category","Stock:Stock","Image URL:Image URL"],
-    Rafeeq: ["Name:Name","SKU:SKU","Description:Description","Price:Price","Category:Category","Stock:Stock"],
-    Bleems: ["Name:Product Name","SKU:SKU","Price:Price","Description:Description","Image URL:Image URL"]
+// --- Platform Output Columns ---
+const platformOutputs = {
+    Talabat: ["Item Name","SKU","Description","Category","Price","Stock","Image URL"],
+    Snoonu: ["Product Name","SKU","Price","Category","Stock","Image URL"],
+    Rafeeq: ["Name","SKU","Description","Price","Category","Stock"],
+    Bleems: ["Product Name","SKU","Price","Description","Image URL"]
 };
 
-// --- Main Function ---
+// --- Auto-detect headers ---
+function autoMapHeaders(rowKeys) {
+    const normalized = {};
+    rowKeys.forEach(k=>{
+        const key = k.trim().toLowerCase().replace(/\s+/g,'');
+        if(key.includes("name")) normalized[k] = "Name";
+        else if(key.includes("sku")) normalized[k] = "SKU";
+        else if(key.includes("price")) normalized[k] = "Price";
+        else if(key.includes("category")) normalized[k] = "Category";
+        else if(key.includes("description")) normalized[k] = "Description";
+        else if(key.includes("stock")) normalized[k] = "Stock";
+        else if(key.includes("image")) normalized[k] = "Image URL";
+        else if(key.includes("variant")) normalized[k] = "Variant";
+        else if(key.includes("modifier")) normalized[k] = "Modifier";
+    });
+    return normalized;
+}
+
+// --- Transform row for platform output ---
+function transformRow(row, platform, headerMap) {
+    const outputCols = platformOutputs[platform];
+    const transformed = {};
+    outputCols.forEach(col=>{
+        const origKey = Object.keys(headerMap).find(k=>headerMap[k].replace(/\s+/g,'') === col.replace(/\s+/g,''));
+        transformed[col] = origKey ? row[origKey] : "";
+    });
+    return transformed;
+}
+
+// --- Main File Processing ---
 function processFile() {
     const fileInput = document.getElementById('fileInput');
     if(!fileInput.files[0]) { alert("Please select a file!"); return; }
@@ -98,19 +118,27 @@ function processFile() {
 
             if(rows.length === 0) { alert("No rows found!"); return; }
 
-            // Clean and normalize
-            rows = rows.map(r => normalizeHeaders(r));
-            rows = rows.map(r => { for(let key in r) r[key]=cleanField(r[key]); return r; });
-            rows = rows.filter(r => Object.values(r).some(v=>v!==''));
+            // Normalize and clean
+            rows = rows.map(r=> {
+                const newRow = {};
+                for(let k in r) newRow[k] = cleanField(r[k]);
+                return newRow;
+            }).filter(r=> Object.values(r).some(v=>v!==''));
+
+            // Auto map headers
+            const headerMap = autoMapHeaders(Object.keys(rows[0]));
 
             // Expand variants/modifiers
             let expanded = [];
             rows.forEach(r=>{
                 let variants = r.Variant ? r.Variant.split(',') : [''];
                 let modifiers = r.Modifier ? r.Modifier.split(',') : [''];
-                variants.forEach(v=>{ modifiers.forEach(m=>{ 
-                    let newRow = {...r}; newRow.Variant=v.trim(); newRow.Modifier=m.trim(); expanded.push(newRow); 
-                });});
+                variants.forEach(v=>{ modifiers.forEach(m=>{
+                    let newRow = {...r};
+                    newRow.Variant = v.trim();
+                    newRow.Modifier = m.trim();
+                    expanded.push(newRow);
+                })});
             });
 
             // Validate
@@ -120,13 +148,13 @@ function processFile() {
                 if(!r._errors.includes("Duplicate SKU")) seenSKUs.add(r.SKU);
             });
 
-            showPreview(expanded);
-            generateCSVs(expanded);
-            generateManualCSVs(expanded);
+            showPreview(expanded, headerMap);
+            generateCSVs(expanded, headerMap);
+            generateManualCSVs(expanded, headerMap);
 
         } catch(err) {
             console.error(err);
-            alert("Error processing file. Check console. Fallback: only CSV upload supported if XLSX fails.");
+            alert("Error processing file. Check console.");
         }
     };
 
@@ -135,7 +163,7 @@ function processFile() {
 }
 
 // --- Preview ---
-function showPreview(rows) {
+function showPreview(rows, headerMap) {
     const previewDiv = document.getElementById('preview');
     const errorDiv = document.getElementById('errorSummary');
 
@@ -147,16 +175,16 @@ function showPreview(rows) {
 
     if(rows.length === 0) { previewDiv.innerHTML=''; return; }
 
+    let allKeys = Object.keys(headerMap).concat(["Variant","Modifier"]).filter((v,i,a)=>a.indexOf(v)===i);
     let html = '<table><tr>';
-    for(let key in previewRows[0]) if(key!=='_errors') html+='<th>'+key+'</th>';
+    allKeys.forEach(k=> html+='<th>'+k+'</th>');
     html+='<th>Errors</th></tr>';
 
     previewRows.forEach(r=>{
         html+='<tr>';
-        for(let key in r){
-            if(key==='_errors') continue;
-            html += r._errors.length? `<td class="error">${r[key]}</td>` : `<td>${r[key]}</td>`;
-        }
+        allKeys.forEach(k=>{
+            html += r._errors.length? `<td class="error">${r[k] || ''}</td>` : `<td>${r[k] || ''}</td>`;
+        });
         html+='<td>'+r._errors.join(', ')+'</td>';
         html+='</tr>';
     });
@@ -166,23 +194,15 @@ function showPreview(rows) {
 }
 
 // --- CSV Generation ---
-function generateCSVs(rows){
+function generateCSVs(rows, headerMap){
     if(typeof JSZip==="undefined" || typeof Papa==="undefined"){
         console.warn("JSZip or PapaParse missing: only manual CSV download available.");
         return;
     }
     const zip = new JSZip();
 
-    for(let platform in platformMap){
-        let mapping = platformMap[platform];
-        let transformed = rows.map(r=>{
-            let obj={};
-            mapping.forEach(m=>{
-                const [src,dest] = m.split(':');
-                obj[dest] = r[src] || '';
-            });
-            return obj;
-        });
+    for(let platform in platformOutputs){
+        let transformed = rows.map(r=>transformRow(r, platform, headerMap));
         const csv = Papa.unparse(transformed);
         zip.file(platform+"_products.csv",csv);
     }
@@ -199,22 +219,14 @@ function generateCSVs(rows){
 }
 
 // --- Manual CSV Buttons ---
-function generateManualCSVs(rows){
+function generateManualCSVs(rows, headerMap){
     const manualDiv = document.getElementById('manualLinks');
     manualDiv.innerHTML='';
-    for(let platform in platformMap){
+    for(let platform in platformOutputs){
         let btn = document.createElement('button');
         btn.textContent = "Download "+platform+" CSV";
         btn.onclick = ()=>{
-            let mapping = platformMap[platform];
-            let transformed = rows.map(r=>{
-                let obj={};
-                mapping.forEach(m=>{
-                    const [src,dest]=m.split(':');
-                    obj[dest]=r[src]||'';
-                });
-                return obj;
-            });
+            let transformed = rows.map(r=>transformRow(r, platform, headerMap));
             const csv = Papa.unparse(transformed);
             const blob = new Blob([csv],{type:'text/csv'});
             const a = document.createElement('a');
