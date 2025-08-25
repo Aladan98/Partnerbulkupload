@@ -2,44 +2,82 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Partnerbulkupload</title>
+<title>Partner Bulk Upload</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.11.0/jszip.min.js"></script>
-<style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    h1 { color: #333; }
-    table { border-collapse: collapse; width: 100%; margin-top: 10px; }
-    th, td { border: 1px solid #ccc; padding: 5px; text-align: left; }
-    .error { background-color: #f8d7da; }
-    #links a, #manualLinks button { display: inline-block; margin: 5px 5px 5px 0; padding: 5px 10px; background: #007BFF; color: white; text-decoration: none; border-radius: 4px; border: none; cursor: pointer; }
-    #links a:hover, #manualLinks button:hover { background: #0056b3; }
-    #errorSummary { margin-top:10px; color: #c00; font-weight:bold; }
-</style>
+<script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body class="bg-gray-100 min-h-screen p-6">
 
-<h1>Partnerbulkupload</h1>
-<p>Download master template, fill products, then upload below.</p>
-<a href="master_products_template.xlsx" download>Download Master Template</a>
-<br><br>
-<input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
-<br><br>
-<button onclick="processFile()">Generate CSVs</button>
+<div class="max-w-6xl mx-auto">
+  <header class="mb-6">
+    <h1 class="text-3xl font-bold text-gray-800">Partner Bulk Upload</h1>
+    <p class="text-gray-600 mt-1">Download the master template, fill products, and upload below.</p>
+  </header>
 
-<h2>Preview & Errors</h2>
-<div id="errorSummary"></div>
-<div id="preview"></div>
-<div id="links"></div>
-<div id="manualLinks"></div>
+  <!-- File Upload Card -->
+  <section class="bg-white shadow-md rounded-lg p-6 mb-6">
+    <a href="master_products_template.xlsx" class="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-500 mb-4" download>Download Master Template</a>
+    
+    <div id="dropZone" class="border-2 border-dashed border-gray-400 rounded-lg p-10 text-center bg-gray-50 hover:bg-gray-100 cursor-pointer transition">
+      <p class="text-gray-600 mb-2">Drag & drop your file here</p>
+      <p class="text-gray-500 text-sm">or click to select a file</p>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" class="hidden">
+    </div>
+
+    <div class="mb-4 mt-4">
+      <p class="font-medium text-gray-700 mb-2">Select Platforms to Generate CSVs:</p>
+      <div class="flex flex-wrap gap-4">
+        <label class="inline-flex items-center">
+          <input type="checkbox" class="platformCheckbox" value="Talabat" checked>
+          <span class="ml-2">Talabat</span>
+        </label>
+        <label class="inline-flex items-center">
+          <input type="checkbox" class="platformCheckbox" value="Snoonu" checked>
+          <span class="ml-2">Snoonu</span>
+        </label>
+        <label class="inline-flex items-center">
+          <input type="checkbox" class="platformCheckbox" value="Rafeeq" checked>
+          <span class="ml-2">Rafeeq</span>
+        </label>
+        <label class="inline-flex items-center">
+          <input type="checkbox" class="platformCheckbox" value="Bleems" checked>
+          <span class="ml-2">Bleems</span>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <!-- Preview & Errors Card -->
+  <section class="bg-white shadow-md rounded-lg p-6 mb-6">
+    <h2 class="text-2xl font-semibold mb-4">Preview & Errors</h2>
+    <div id="errorSummary" class="mb-4 text-red-600 font-medium"></div>
+    <div id="preview" class="overflow-x-auto max-h-96 overflow-y-auto"></div>
+  </section>
+
+  <!-- Download Links Card -->
+  <section class="bg-white shadow-md rounded-lg p-6">
+    <h2 class="text-2xl font-semibold mb-4">Downloads</h2>
+    <div id="links" class="mb-4"></div>
+    <div id="manualLinks" class="flex flex-wrap gap-2"></div>
+  </section>
+</div>
+
+<!-- Loading Spinner -->
+<div id="loadingSpinner" class="hidden fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+  <div class="bg-white p-6 rounded-lg shadow-lg flex items-center space-x-3">
+    <svg class="animate-spin h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+    </svg>
+    <span class="text-gray-700 font-medium">Processing file...</span>
+  </div>
+</div>
 
 <script>
 // --- Utility Functions ---
-function cleanField(str) {
-    if(!str) return '';
-    return str.toString().trim().replace(/[\r\n]+/g, ' ').replace(/[^\x00-\x7F\u0600-\u06FF ]+/g, '');
-}
-
+function cleanField(str) { if(!str) return ''; return str.toString().trim().replace(/[\r\n]+/g, ' ').replace(/[^\x00-\x7F\u0600-\u06FF ]+/g, ''); }
 function validateRow(row, seenSKUs) {
     let errors = [];
     if(!row.SKU) errors.push("Missing SKU");
@@ -63,7 +101,7 @@ const platformOutputs = {
 function autoMapHeaders(rowKeys) {
     const normalized = {};
     rowKeys.forEach(k=>{
-        const key = k.trim().toLowerCase().replace(/\s+/g,'');
+        const key = k.trim().toLowerCase().replace(/\s+/g, '');
         if(key.includes("name")) normalized[k] = "Name";
         else if(key.includes("sku")) normalized[k] = "SKU";
         else if(key.includes("price")) normalized[k] = "Price";
@@ -88,174 +126,138 @@ function transformRow(row, platform, headerMap) {
     return transformed;
 }
 
+// --- Spinner ---
+function showSpinner(show){ document.getElementById('loadingSpinner').classList.toggle('hidden', !show); }
+
+// --- Drag & Drop ---
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('bg-gray-100'); });
+dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.classList.remove('bg-gray-100'); });
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('bg-gray-100');
+    if(e.dataTransfer.files.length > 0){
+        fileInput.files = e.dataTransfer.files;
+        processFile();
+    }
+});
+
+// --- Selected Platforms ---
+function getSelectedPlatforms(){
+    return Array.from(document.querySelectorAll('.platformCheckbox')).filter(cb => cb.checked).map(cb => cb.value);
+}
+
 // --- Main File Processing ---
 function processFile() {
-    const fileInput = document.getElementById('fileInput');
     if(!fileInput.files[0]) { alert("Please select a file!"); return; }
+    showSpinner(true);
 
     const reader = new FileReader();
     reader.onload = function(e) {
-        let rows = [];
         try {
+            let rows = [];
             const file = fileInput.files[0];
-            // XLSX parsing
             if(file.name.match(/\.xlsx|\.xls$/i) && typeof XLSX !== "undefined") {
                 const data = new Uint8Array(e.target.result);
                 const workbook = XLSX.read(data, {type:'array'});
-                const sheetName = workbook.SheetNames[0];
-                const sheet = workbook.Sheets[sheetName];
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
                 rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
-            } 
-            // CSV parsing
-            else if(file.name.match(/\.csv$/i) && typeof Papa !== "undefined") {
+            } else if(file.name.match(/\.csv$/i) && typeof Papa !== "undefined") {
                 const text = e.target.result;
-                const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
-                rows = parsed.data;
-            } else {
-                alert("Unsupported file or missing parsing libraries.");
-                return;
-            }
+                rows = Papa.parse(text, {header:true, skipEmptyLines:true}).data;
+            } else { alert("Unsupported file."); return; }
 
-            if(rows.length === 0) { alert("No rows found!"); return; }
+            rows = rows.map(r=> { const newRow = {}; for(let k in r) newRow[k] = cleanField(r[k]); return newRow; })
+                       .filter(r=> Object.values(r).some(v=>v!==''));
 
-            // Normalize and clean
-            rows = rows.map(r=> {
-                const newRow = {};
-                for(let k in r) newRow[k] = cleanField(r[k]);
-                return newRow;
-            }).filter(r=> Object.values(r).some(v=>v!==''));
+            const headerMap = rows[0] ? autoMapHeaders(Object.keys(rows[0])) : {};
+            if(Object.keys(headerMap).length === 0) alert("No recognizable columns found!");
 
-            // Auto map headers
-            const headerMap = autoMapHeaders(Object.keys(rows[0]));
-
-            // Expand variants/modifiers
             let expanded = [];
             rows.forEach(r=>{
                 let variants = r.Variant ? r.Variant.split(',') : [''];
                 let modifiers = r.Modifier ? r.Modifier.split(',') : [''];
-                variants.forEach(v=>{ modifiers.forEach(m=>{
-                    let newRow = {...r};
-                    newRow.Variant = v.trim();
-                    newRow.Modifier = m.trim();
-                    expanded.push(newRow);
-                })});
+                variants.forEach(v=>{ modifiers.forEach(m=>{ let newRow = {...r}; newRow.Variant=v.trim(); newRow.Modifier=m.trim(); expanded.push(newRow); })});
             });
 
-            // Validate
             let seenSKUs = new Set();
-            expanded.forEach(r=>{
-                r._errors = validateRow(r, seenSKUs);
-                if(!r._errors.includes("Duplicate SKU")) seenSKUs.add(r.SKU);
-            });
+            expanded.forEach(r=>{ r._errors = validateRow(r, seenSKUs); if(!r._errors.includes("Duplicate SKU")) seenSKUs.add(r.SKU); });
 
             showPreview(expanded, headerMap);
             generateCSVs(expanded, headerMap);
             generateManualCSVs(expanded, headerMap);
 
-        } catch(err) {
-            console.error(err);
-            alert("Error processing file. Check console.");
-        }
+        } catch(err) { console.error(err); alert("Error processing file."); }
+        finally { showSpinner(false); }
     };
 
-    const file = fileInput.files[0];
-    if(file.name.endsWith(".csv")) reader.readAsText(file); else reader.readAsArrayBuffer(file);
+    if(fileInput.files[0].name.endsWith(".csv")) reader.readAsText(fileInput.files[0]);
+    else reader.readAsArrayBuffer(fileInput.files[0]);
 }
 
 // --- Preview ---
 function showPreview(rows, headerMap) {
     const previewDiv = document.getElementById('preview');
     const errorDiv = document.getElementById('errorSummary');
-
     const maxPreview = 100;
     const previewRows = rows.slice(0, maxPreview);
-
     let totalErrors = rows.filter(r=>r._errors.length>0).length;
     errorDiv.textContent = `Total Rows: ${rows.length}, Errors: ${totalErrors} (Showing first ${maxPreview} rows)`;
 
     if(rows.length === 0) { previewDiv.innerHTML=''; return; }
 
-    let allKeys = Object.keys(headerMap).concat(["Variant","Modifier"]).filter((v,i,a)=>a.indexOf(v)===i);
-    let html = '<table><tr>';
-    allKeys.forEach(k=> html+='<th>'+k+'</th>');
-    html+='<th>Errors</th></tr>';
+    let requiredCols = ["Name","SKU","Price","Category"];
+    let allKeys = Object.keys(headerMap).concat(requiredCols).concat(["Variant","Modifier"]).filter((v,i,a)=>a.indexOf(v)===i);
 
+    let html = '<table class="min-w-full border border-gray-200">';
+    html+='<thead class="bg-gray-100"><tr>';
+    allKeys.forEach(k=> html+='<th class="border p-2 text-left">'+k+'</th>');
+    html+='<th class="border p-2 text-left">Errors</th></tr></thead><tbody>';
     previewRows.forEach(r=>{
         html+='<tr>';
-        allKeys.forEach(k=>{
-            html += r._errors.length? `<td class="error">${r[k] || ''}</td>` : `<td>${r[k] || ''}</td>`;
-        });
-        html+='<td>'+r._errors.join(', ')+'</td>';
+        allKeys.forEach(k=>{ html += r._errors.length? `<td class="border p-2 bg-red-100">${r[k] || ''}</td>` : `<td class="border p-2">${r[k] || ''}</td>`; });
+        html+='<td class="border p-2">'+r._errors.join(', ')+'</td>';
         html+='</tr>';
     });
-
-    html+='</table>';
+    html+='</tbody></table>';
     previewDiv.innerHTML = html;
 }
 
 // --- CSV Generation ---
 function generateCSVs(rows, headerMap){
-    if(typeof JSZip==="undefined" || typeof Papa==="undefined"){
-        console.warn("JSZip or PapaParse missing: only manual CSV download available.");
-        return;
-    }
+    if(typeof JSZip==="undefined" || typeof Papa==="undefined"){ return; }
+    const selectedPlatforms = getSelectedPlatforms();
+    if(selectedPlatforms.length === 0) return alert("Please select at least one platform!");
     const zip = new JSZip();
-
-    for(let platform in platformOutputs){
-        let transformed = rows.map(r=>transformRow(r, platform, headerMap));
-        const csv = Papa.unparse(transformed);
-        zip.file(platform+"_products.csv",csv);
-    }
+    selectedPlatforms.forEach(platform=>{ let transformed = rows.map(r=>transformRow(r, platform, headerMap)); zip.file(platform+"_products.csv",Papa.unparse(transformed)); });
 
     zip.generateAsync({type:"blob"}).then(content=>{
-        const linksDiv = document.getElementById('links');
-        linksDiv.innerHTML='';
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(content);
-        link.download="All_Platform_CSVs.zip";
-        link.textContent="Download All CSVs (ZIP)";
+        const linksDiv = document.getElementById('links'); linksDiv.innerHTML='';
+        const link = document.createElement('a'); link.href = URL.createObjectURL(content); link.download="Selected_Platform_CSVs.zip"; link.textContent="Download Selected CSVs (ZIP)";
+        link.className = "bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-500 inline-block";
         linksDiv.appendChild(link);
     });
 }
 
 // --- Manual CSV Buttons ---
 function generateManualCSVs(rows, headerMap){
-    const manualDiv = document.getElementById('manualLinks');
-    manualDiv.innerHTML='';
-    for(let platform in platformOutputs){
-        let btn = document.createElement('button');
-        btn.textContent = "Download "+platform+" CSV";
-        btn.onclick = ()=>{
-            let transformed = rows.map(r=>transformRow(r, platform, headerMap));
-            const csv = Papa.unparse(transformed);
-            const blob = new Blob([csv],{type:'text/csv'});
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = platform+"_products.csv";
-            a.click();
-        };
-        manualDiv.appendChild(btn);
-    }
-
-    // Errors CSV
-    let errorRows = rows.filter(r=>r._errors.length>0).map(r=>{
-        let copy = {...r}; copy.Errors=r._errors.join(', '); delete copy._errors; return copy;
+    const manualDiv = document.getElementById('manualLinks'); manualDiv.innerHTML='';
+    const selectedPlatforms = getSelectedPlatforms();
+    selectedPlatforms.forEach(platform=>{
+        let btn = document.createElement('button'); btn.textContent = "Download "+platform+" CSV";
+        btn.onclick = ()=>{ let transformed = rows.map(r=>transformRow(r, platform, headerMap)); const blob = new Blob([Papa.unparse(transformed)],{type:'text/csv'}); const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download = platform+"_products.csv"; a.click(); };
+        btn.className = "bg-green-600 text-white px-4 py-2 rounded hover:bg-green-500"; manualDiv.appendChild(btn);
     });
+
+    let errorRows = rows.filter(r=>r._errors.length>0).map(r=>{ let copy = {...r}; copy.Errors=r._errors.join(', '); delete copy._errors; return copy; });
     if(errorRows.length>0){
-        let btn = document.createElement('button');
-        btn.textContent = "Download Errors CSV";
-        btn.onclick=()=>{
-            const csv = Papa.unparse(errorRows);
-            const blob = new Blob([csv],{type:'text/csv'});
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download="errors.csv";
-            a.click();
-        };
-        manualDiv.appendChild(btn);
+        let btn = document.createElement('button'); btn.textContent = "Download Errors CSV";
+        btn.onclick=()=>{ const blob = new Blob([Papa.unparse(errorRows)],{type:'text/csv'}); const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download="errors.csv"; a.click(); };
+        btn.className = "bg-red-600 text-white px-4 py-2 rounded hover:bg-red-500"; manualDiv.appendChild(btn);
     }
 }
 </script>
-
 </body>
 </html>
