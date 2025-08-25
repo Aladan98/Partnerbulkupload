@@ -25,6 +25,16 @@
 <div id="links"></div>
 
 <script>
+// Normalize headers: trims and converts to proper key
+function normalizeHeaders(row) {
+    let newRow = {};
+    for (let key in row) {
+        let newKey = key.toString().trim().replace(/\s+/g, ' ');
+        newRow[newKey] = row[key];
+    }
+    return newRow;
+}
+
 function cleanField(str) {
     if(!str) return '';
     return str.toString().trim().replace(/[\r\n]+/g, ' ').replace(/[^\x00-\x7F\u0600-\u06FF ]+/g, '');
@@ -51,7 +61,15 @@ function processFile() {
         const workbook = XLSX.read(data, {type:'array'});
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
-        let rows = XLSX.utils.sheet_to_json(sheet);
+        let rows = XLSX.utils.sheet_to_json(sheet, {defval:''}); // defval='' ensures empty cells included
+
+        if(rows.length === 0) {
+            alert("No rows found in Excel! Check your sheet and headers.");
+            return;
+        }
+
+        // Normalize headers
+        rows = rows.map(r => normalizeHeaders(r));
 
         // Clean fields
         rows = rows.map(r => {
@@ -59,7 +77,15 @@ function processFile() {
             return r;
         });
 
-        // Expand variants/modifiers into separate rows if needed
+        // Remove fully empty rows
+        rows = rows.filter(r => Object.values(r).some(v => v !== ''));
+
+        if(rows.length === 0) {
+            alert("All rows appear empty after cleaning. Check your data.");
+            return;
+        }
+
+        // Expand variants/modifiers into separate rows
         let expanded = [];
         rows.forEach(r => {
             let variants = r.Variant ? r.Variant.split(',') : [''];
